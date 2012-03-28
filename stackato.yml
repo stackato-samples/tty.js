@@ -1,0 +1,12 @@
+name: tty-js
+
+framework:
+  type: node
+
+mem: 64M
+
+ignores: ['node_modules', '.git']
+
+processes:
+  web:
+    chmod +x ./bin/tty.js; ./bin/tty.js --port $VCAP_APP_PORT

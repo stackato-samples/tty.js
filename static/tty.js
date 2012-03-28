@@ -26,14 +26,14 @@ var socket
 /**
  * Open
  */
-
+      
 function open() {
   if (socket) return;
 
   root = doc.documentElement;
   body = doc.body;
 
-  socket = io.connect();
+  socket = io.connect(window.location.origin);
   windows = [];
   terms = {};
   uid = 0;
