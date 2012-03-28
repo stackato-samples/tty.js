@@ -114,6 +114,15 @@ tty's and `forkpty(3)`. tty.js builds on linux and osx, and it *should* build
 on NetBSD, FreeBSD, and OpenBSD as well. If you have trouble building, please
 post an issue.
 
+## Pushing to Stackato
+
+You should first configure your authenticated user in `lib/config.js`. Currently the defaults are:
+
+User: `stackato`
+Password: `stackato`
+
+When done, simply run 'stackato push -n'.
+
 ## Todo
 
 The distance to go before full xterm compatibility.
