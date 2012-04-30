@@ -9,85 +9,70 @@
  * Elements
  */
 
-var doc = this.document
-  , win = this
+var document = this.document
+  , window = this
   , root
-  , body;
+  , body
+  , h1;
+
+var initialTitle = document.title;
 
 /**
  * Shared
  */
 
-var socket
-  , windows
-  , terms
-  , uid;
+var windows
+  , terms;
 
 /**
  * Open
  */
       
 function open() {
-  if (socket) return;
+  var socket = io.connect()
+    , tty = window.tty;
 
-  root = doc.documentElement;
-  body = doc.body;
+  root = document.documentElement;
+  body = document.body;
+  h1 = document.getElementsByTagName('h1')[0];
 
-  socket = io.connect(window.location.origin);
   windows = [];
   terms = {};
-  uid = 0;
 
-  var open = doc.getElementById('open')
-    , lights = doc.getElementById('lights');
+  tty.socket = socket;
+  tty.windows = windows;
+  tty.terms = terms;
 
-  on(open, 'click', function() {
-    new Window;
-  });
+  var open = document.getElementById('open')
+    , lights = document.getElementById('lights');
 
-  on(lights, 'click', function() {
-    root.className = !root.className
-      ? 'dark'
-      : '';
-  });
+  if (open) {
+    on(open, 'click', function() {
+      new Window(socket);
+    });
+  }
+
+  if (lights) {
+    on(lights, 'click', function() {
+      root.className = !root.className
+        ? 'dark'
+        : '';
+    });
+  }
 
   socket.on('connect', function() {
     reset();
-    new Window;
+    new Window(socket);
   });
 
   socket.on('data', function(id, data) {
+    if (!terms[id]) return;
     terms[id].write(data);
   });
 
   socket.on('kill', function(id) {
     if (!terms[id]) return;
     terms[id]._destroy();
-  });
-
-  // The problem with syncing: we never inform the
-  // server whether a terminal is in a tab
-  // or a window. We just use windows here.
-  // Possibly rename to 'login' (?)
-  socket.on('sync', function(keys, uid_) {
-    var emit = socket.emit
-      , terms_ = {}
-      , l = keys.length
-      , i = 0;
-
-    reset();
-
-    // temporary hack
-    socket.emit = function() {};
-
-    for (; i < l; i++) {
-      terms_[keys[i]] = (new Window).focused;
-    }
-
-    socket.emit = emit;
-
-    terms = terms_;
-    uid = uid_;
   });
 
   // We would need to poll the os on the serverside
@@ -123,16 +108,19 @@ function reset() {
   while (i--) {
     windows[i].destroy();
   }
+
   windows = [];
   terms = {};
-  uid = 0;
+
+  window.tty.windows = windows;
+  window.tty.terms = terms;
 }
 
 /**
  * Window
  */
 
-function Window() {
+function Window(socket) {
   var self = this;
 
   var el
@@ -159,6 +147,7 @@ function Window() {
   title.className = 'title';
   title.innerHTML = '';
 
+  this.socket = socket;
   this.element = el;
   this.grip = grip;
   this.bar = bar;
@@ -198,12 +187,13 @@ Window.prototype.bind = function() {
     } else {
       self.createTab();
     }
+    return cancel(ev);
   });
 
   on(grip, 'mousedown', function(ev) {
     self.focus();
     self.resizing(ev);
-    cancel(ev);
+    return cancel(ev);
   });
 
   on(el, 'mousedown', function(ev) {
@@ -219,6 +209,8 @@ Window.prototype.bind = function() {
     last = new Date;
 
     self.drag(ev);
+
+    return cancel(ev);
   });
 };
 
@@ -275,12 +267,12 @@ Window.prototype.drag = function(ev) {
     el.style.cursor = '';
     root.style.cursor = '';
 
-    off(doc, 'mousemove', move);
-    off(doc, 'mouseup', up);
+    off(document, 'mousemove', move);
+    off(document, 'mouseup', up);
   }
 
-  on(doc, 'mousemove', move);
-  on(doc, 'mouseup', up);
+  on(document, 'mousemove', move);
+  on(document, 'mouseup', up);
 };
 
 Window.prototype.resizing = function(ev) {
@@ -329,12 +321,12 @@ Window.prototype.resizing = function(ev) {
     root.style.cursor = '';
     term.element.style.height = '';
 
-    off(doc, 'mousemove', move);
-    off(doc, 'mouseup', up);
+    off(document, 'mousemove', move);
+    off(document, 'mouseup', up);
   }
 
-  on(doc, 'mousemove', move);
-  on(doc, 'mouseup', up);
+  on(document, 'mousemove', move);
+  on(document, 'mouseup', up);
 };
 
 Window.prototype.maximize = function() {
@@ -361,6 +353,8 @@ Window.prototype.maximize = function() {
     el.style.top = m.top + 'px';
     el.style.width = '';
     el.style.height = '';
+    term.element.style.width = '';
+    term.element.style.height = '';
     el.style.boxSizing = '';
     self.grip.style.display = '';
     root.className = m.root;
@@ -370,10 +364,8 @@ Window.prototype.maximize = function() {
 
   window.scrollTo(0, 0);
 
-  x = el.offsetWidth - term.element.clientWidth;
-  y = el.offsetHeight - term.element.clientHeight;
-  x = (root.clientWidth - x) / term.element.clientWidth;
-  y = (root.clientHeight - y) / term.element.clientHeight;
+  x = root.clientWidth / term.element.offsetWidth;
+  y = root.clientHeight / term.element.offsetHeight;
   x = (x * term.cols) | 0;
   y = (y * term.rows) | 0;
 
@@ -381,8 +373,10 @@ Window.prototype.maximize = function() {
   el.style.top = '0px';
   el.style.width = '100%';
   el.style.height = '100%';
+  term.element.style.width = '100%';
+  term.element.style.height = '100%';
   el.style.boxSizing = 'border-box';
-  //this.grip.style.display = 'none';
+  this.grip.style.display = 'none';
   root.className = 'maximized';
 
   this.resize(x, y);
@@ -404,7 +398,7 @@ Window.prototype.each = function(func) {
 };
 
 Window.prototype.createTab = function() {
-  new Tab(this);
+  new Tab(this, this.socket);
 };
 
 Window.prototype.highlight = function() {
@@ -444,16 +438,14 @@ Window.prototype.previousTab = function() {
  * Tab
  */
 
-function Tab(win) {
+function Tab(win, socket) {
   var self = this;
 
-  var id = uid++
-    , cols = win.cols
+  var cols = win.cols
     , rows = win.rows;
 
-  Terminal.call(this, cols, rows, function(data) {
-    socket.emit('data', id, data);
-  });
+  // TODO: make this an EventEmitter
+  Terminal.call(this, cols, rows);
 
   var button = document.createElement('div');
   button.className = 'tab';
@@ -469,7 +461,8 @@ function Tab(win) {
     return cancel(ev);
   });
 
-  this.id = id;
+  this.id = '';
+  this.socket = socket;
   this.window = win;
   this.button = button;
   this.element = null;
@@ -477,17 +470,38 @@ function Tab(win) {
   this.open();
 
   win.tabs.push(this);
-  terms[id] = this;
 
-  socket.emit('create', cols, rows, function(err, data) {
+  this.socket.emit('create', cols, rows, function(err, data) {
     if (err) return self._destroy();
     self.pty = data.pty;
-    self.process = data.process;
-    win.title.innerHTML = data.process;
+    self.id = data.id;
+    terms[self.id] = self;
+    self.setProcessName(data.process);
   });
 };
 
 inherits(Tab, Terminal);
+
+Tab.prototype.handler = function(data) {
+  this.socket.emit('data', this.id, data);
+};
+
+Tab.prototype.handleTitle = function(title) {
+  if (!title) return;
+
+  title = sanitize(title);
+  this.title = title;
+
+  if (Terminal.focus === this) {
+    document.title = title;
+    // if (h1) h1.innerHTML = title;
+  }
+
+  if (this.window.focused === this) {
+    this.window.bar.title = title;
+    // this.setProcessName(this.process);
+  }
+};
 
 Tab.prototype._write = Tab.prototype.write;
 
@@ -506,7 +520,9 @@ Tab.prototype.focus = function() {
   // maybe move to Tab.prototype.switch
   if (win.focused !== this) {
     if (win.focused) {
-      dummy.appendChild(win.focused.element);
+      if (win.focused.element.parentNode) {
+        win.focused.element.parentNode.removeChild(win.focused.element);
+      }
       win.focused.button.style.fontWeight = '';
     }
 
@@ -514,9 +530,12 @@ Tab.prototype.focus = function() {
     win.focused = this;
 
     win.title.innerHTML = this.process;
+    document.title = this.title || initialTitle;
     this.button.style.fontWeight = 'bold';
     this.button.style.color = '';
   }
+
+  this.handleTitle(this.title);
 
   this._focus();
 
@@ -526,7 +545,7 @@ Tab.prototype.focus = function() {
 Tab.prototype._resize = Tab.prototype.resize;
 
 Tab.prototype.resize = function(cols, rows) {
-  socket.emit('resize', this.id, cols, rows);
+  this.socket.emit('resize', this.id, cols, rows);
   this._resize(cols, rows);
 };
 
@@ -537,9 +556,11 @@ Tab.prototype._destroy = function() {
   var win = this.window;
 
   this.button.parentNode.removeChild(this.button);
-  this.element.parentNode.removeChild(this.element);
+  if (this.element.parentNode) {
+    this.element.parentNode.removeChild(this.element);
+  }
 
-  delete terms[this.id];
+  if (terms[this.id]) delete terms[this.id];
   splice(win.tabs, this);
 
   if (win.focused === this) {
@@ -549,17 +570,22 @@ Tab.prototype._destroy = function() {
   if (!win.tabs.length) {
     win.destroy();
   }
+
+  // if (!windows.length) {
+  //   document.title = initialTitle;
+  //   if (h1) h1.innerHTML = initialTitle;
+  // }
 };
 
 Tab.prototype.destroy = function() {
   if (this.destroyed) return;
-  socket.emit('kill', this.id);
+  this.socket.emit('kill', this.id);
   this._destroy();
 };
 
-Tab.prototype._keyDownHandler = Tab.prototype.keyDownHandler;
+Tab.prototype._keyDown = Tab.prototype.keyDown;
 
-Tab.prototype.keyDownHandler = function(ev) {
+Tab.prototype.keyDown = function(ev) {
   if (this.pendingKey) {
     this.pendingKey = false;
     return this.specialKeyHandler(ev);
@@ -599,7 +625,7 @@ Tab.prototype.keyDownHandler = function(ev) {
   }
 
   // Pass to terminal key handler.
-  return this._keyDownHandler(ev);
+  return this._keyDown(ev);
 };
 
 // tmux/screen-like keys
@@ -610,7 +636,7 @@ Tab.prototype.specialKeyHandler = function(ev) {
   switch (key) {
     case 65: // a
       if (ev.ctrlKey) {
-        return this._keyDownHandler(ev);
+        return this._keyDown(ev);
       }
       break;
     case 67: // c
@@ -628,7 +654,7 @@ Tab.prototype.specialKeyHandler = function(ev) {
         key -= 48;
         // 1-indexed
         key--;
-        if (!~key) key = 10;
+        if (!~key) key = 9;
         if (win.tabs[key]) {
           win.tabs[key].focus();
         }
@@ -639,16 +665,67 @@ Tab.prototype.specialKeyHandler = function(ev) {
   return cancel(ev);
 };
 
+/**
+ * Program-specific Features
+ */
+
+Tab.prototype._bindMouse = Tab.prototype.bindMouse;
+Tab.prototype.bindMouse = function() {
+  if (!Terminal.programFeatures) return this._bindMouse();
+
+  var self = this;
+
+  var wheelEvent = 'onmousewheel' in window
+    ? 'mousewheel'
+    : 'DOMMouseScroll';
+
+  var programs = {
+    irssi: true,
+    man: true,
+    less: true,
+    htop: true,
+    top: true,
+    w3m: true,
+    lynx: true
+  };
+
+  on(self.element, wheelEvent, function(ev) {
+    if (self.mouseEvents) return;
+    if (!programs[self.process]) return;
+
+    if ((ev.type === 'mousewheel' && ev.wheelDeltaY > 0)
+        || (ev.type === 'DOMMouseScroll' && ev.detail < 0)) {
+      // page up
+      self.keyDown({keyCode: 33});
+    } else {
+      // page down
+      self.keyDown({keyCode: 34});
+    }
+
+    return cancel(ev);
+  });
+
+  return this._bindMouse();
+};
+
 Tab.prototype.pollProcessName = function(func) {
   var self = this;
-  socket.emit('process', this.id, function(err, name) {
-    self.process = name;
-    self.button.title = name;
-    if (self.window.focused === self) {
-      self.window.title.innerHTML = name;
-    }
-    if (func) func(name);
+  this.socket.emit('process', this.id, function(err, name) {
+    if (!err) self.setProcessName(name);
+    if (func) func(err, name);
   });
+};
+
+Tab.prototype.setProcessName = function(name) {
+  name = sanitize(name);
+  this.process = name;
+  this.button.title = name;
+  if (this.window.focused === this) {
+    // if (this.title) {
+    //   name += ' (' + this.title + ')';
+    // }
+    this.window.title.innerHTML = name;
+  }
 };
 
 /**
@@ -694,20 +771,38 @@ function cancel(ev) {
 
 var isMac = ~navigator.userAgent.indexOf('Mac');
 
-var dummy = document.createElement('div');
+function sanitize(text) {
+  if (!text) return '';
+  return (text + '').replace(/[&<>]/g, '')
+}
 
 /**
  * Load
  */
 
 function load() {
-  off(doc, 'load', load);
-  off(doc, 'DOMContentLoaded', load);
+  if (load.done) return;
+  load.done = true;
+
+  off(document, 'load', load);
+  off(document, 'DOMContentLoaded', load);
   open();
 }
 
-on(doc, 'load', load);
-on(doc, 'DOMContentLoaded', load);
+on(document, 'load', load);
+on(document, 'DOMContentLoaded', load);
 setTimeout(load, 200);
 
-}).call(this);
+/**
+ * Expose
+ */
+
+this.tty = {
+  Window: Window,
+  Tab: Tab,
+  Terminal: Terminal
+};
+
+}).call(function() {
+  return this || (typeof window !== 'undefined' ? window : global);
+}());

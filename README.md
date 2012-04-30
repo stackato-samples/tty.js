@@ -23,6 +23,7 @@ Bellard's vt100 for [jslinux](http://bellard.org/jslinux/).
 - Screen/Tmux-like keys (optional)
 - Ability to efficiently render programs: vim, mc, irssi, vifm, etc.
 - Support for xterm mouse events
+- 256 color support
 
 ## Install
 
@@ -48,11 +49,11 @@ JSON file. An example configuration file looks like:
   "hostname": "127.0.0.1",
   "shell": "sh",
   "shellArgs": ["arg1", "arg2"],
-  "stylesheet": "./my_custom_stylesheet.css",
-  "userStylesheet": "./user-stylesheet.css",
-  "static": "./my_custom_static_directory/",
+  "static": "./static",
   "limitGlobal": 10000,
   "limitPerUser": 1000,
+  "hooks": "./hooks.js",
+  "cwd": ".",
   "term": {
     "termName": "xterm",
     "geometry": [80, 30],
@@ -78,14 +79,30 @@ JSON file. An example configuration file looks like:
       "#ad7fa8",
       "#34e2e2",
       "#eeeeec",
-      "#000000",
-      "#f0f0f0"
     ]
   }
 }
 ```
 
 Usernames and passwords can be plaintext or sha1 hashes.
+
+### 256 colors
+
+If tty.js fails to check your terminfo properly, you can force your `TERM`
+to `xterm-256color` by setting `"termName": "xterm-256color"` in your config.
+
+### Example Hooks File
+
+``` js
+var db = require('./db');
+
+module.exports = {
+  auth: function(user, pass, next) {
+    // Do database auth
+    next(null, pass === password);
+  }
+};
+```
 
 ## Security
 
