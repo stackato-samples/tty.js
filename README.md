@@ -3,6 +3,28 @@
 A terminal in your browser using node.js and socket.io. Based on Fabrice
 Bellard's vt100 for [jslinux](http://bellard.org/jslinux/).
 
+## Features
+
+- Tabs, Stacking Windows, Maximizable Terminals
+- Screen/Tmux-like keys (optional)
+- Ability to efficiently render programs: vim, mc, irssi, vifm, etc.
+- Support for xterm mouse events
+- 256 color support
+
+## Deploying to Stackato
+
+You should first configure your authenticated user in `lib/config.js`. Currently the defaults are:
+
+User: `stackato`
+Password: `stackato`
+
+When done, simply run 'stackato push -n'.
+
+## Local Installation
+
+``` bash
+$ npm install tty.js
+```
 ## Screenshots
 
 ### irssi
@@ -16,20 +38,6 @@ Bellard's vt100 for [jslinux](http://bellard.org/jslinux/).
 ### bash
 
 ![](http://i.imgur.com/HimZb.png)
-
-## Features
-
-- Tabs, Stacking Windows, Maximizable Terminals
-- Screen/Tmux-like keys (optional)
-- Ability to efficiently render programs: vim, mc, irssi, vifm, etc.
-- Support for xterm mouse events
-- 256 color support
-
-## Install
-
-``` bash
-$ npm install tty.js
-```
 
 ## Configuration
 
@@ -130,15 +138,6 @@ tty.js should ultimately be able to work on any unix that implements unix98
 tty's and `forkpty(3)`. tty.js builds on linux and osx, and it *should* build
 on NetBSD, FreeBSD, and OpenBSD as well. If you have trouble building, please
 post an issue.
-
-## Pushing to Stackato
-
-You should first configure your authenticated user in `lib/config.js`. Currently the defaults are:
-
-User: `stackato`
-Password: `stackato`
-
-When done, simply run 'stackato push -n'.
 
 ## Todo
 
