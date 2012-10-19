@@ -13,8 +13,8 @@
   "keywords": [ "tty", "terminal" ],
   "tags": [ "tty", "terminal" ],
   "dependencies": {
-    "express": ">= 2.5.8",
-    "socket.io": ">= 0.8.7",
-    "pty.js": ">= 0.0.8"
+    "express": "= 2.5.8",
+    "socket.io": "0.8.7",
+    "pty.js": "= 0.0.8"
   }
 }
