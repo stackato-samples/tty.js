@@ -3,28 +3,12 @@
 A terminal in your browser using node.js and socket.io. Based on Fabrice
 Bellard's vt100 for [jslinux](http://bellard.org/jslinux/).
 
-## Features
+For the standalone web terminal, see
+[**term.js**](https://github.com/chjj/term.js).
 
-- Tabs, Stacking Windows, Maximizable Terminals
-- Screen/Tmux-like keys (optional)
-- Ability to efficiently render programs: vim, mc, irssi, vifm, etc.
-- Support for xterm mouse events
-- 256 color support
+For the lowlevel terminal spawner, see
+[**pty.js**](https://github.com/chjj/pty.js).
 
-## Deploying to Stackato
-
-You should first configure your authenticated user in `lib/config.js`. Currently the defaults are:
-
-User: `stackato`
-Password: `stackato`
-
-When done, simply run 'stackato push -n'.
-
-## Local Installation
-
-``` bash
-$ npm install tty.js
-```
 ## Screenshots
 
 ### irssi
@@ -38,6 +22,56 @@ $ npm install tty.js
 ### bash
 
 ![](http://i.imgur.com/HimZb.png)
+
+## Features
+
+- Tabs, Stacking Windows, Maximizable Terminals
+- Screen/Tmux-like keys (optional)
+- Ability to efficiently render programs: vim, mc, irssi, vifm, etc.
+- Support for xterm mouse events
+- 256 color support
+- Persistent sessions
+
+## Deploying to Stackato
+
+You should first configure your authenticated user in `lib/config.js`. Currently the defaults are:
+
+User: `stackato`
+Password: `stackato`
+
+When done, simply run
+
+```
+ stackato push -n
+```
+
+## Install
+
+``` bash
+$ npm install tty.js
+```
+
+## Usage
+
+tty.js is an app, but it's also possible to hook into it programatically.
+
+``` js
+var tty = require('tty.js');
+
+var app = tty.createServer({
+  shell: 'bash',
+  users: {
+    foo: 'bar'
+  },
+  port: 8000
+});
+
+app.get('/foo', function(req, res, next) {
+  res.send('bar');
+});
+
+app.listen();
+```
 
 ## Configuration
 
@@ -60,11 +94,16 @@ JSON file. An example configuration file looks like:
   "static": "./static",
   "limitGlobal": 10000,
   "limitPerUser": 1000,
-  "hooks": "./hooks.js",
+  "localOnly": false,
   "cwd": ".",
+  "syncSession": false,
+  "sessionTimeout": 600000,
+  "log": true,
+  "io": { "log": false },
+  "debug": false,
   "term": {
     "termName": "xterm",
-    "geometry": [80, 30],
+    "geometry": [80, 24],
     "scrollback": 1000,
     "visualBell": false,
     "popOnBell": false,
@@ -78,7 +117,7 @@ JSON file. An example configuration file looks like:
       "#3465a4",
       "#75507b",
       "#06989a",
-      "#d3d7cf"
+      "#d3d7cf",
       "#555753",
       "#ef2929",
       "#8ae234",
@@ -86,7 +125,7 @@ JSON file. An example configuration file looks like:
       "#729fcf",
       "#ad7fa8",
       "#34e2e2",
-      "#eeeeec",
+      "#eeeeec"
     ]
   }
 }
@@ -98,19 +137,6 @@ Usernames and passwords can be plaintext or sha1 hashes.
 
 If tty.js fails to check your terminfo properly, you can force your `TERM`
 to `xterm-256color` by setting `"termName": "xterm-256color"` in your config.
-
-### Example Hooks File
-
-``` js
-var db = require('./db');
-
-module.exports = {
-  auth: function(user, pass, next) {
-    // Do database auth
-    next(null, pass === password);
-  }
-};
-```
 
 ## Security
 
@@ -150,8 +176,14 @@ The distance to go before full xterm compatibility.
 - Origin Mode, Insert Mode
 - Proper Tab Setting
 
+## Contribution and License Agreement
+
+If you contribute code to this project, you are implicitly allowing your code
+to be distributed under the MIT license. You are also implicitly verifying that
+all code is your original work. `</legalese>`
+
 ## License
 
-Copyright (c) 2012, Christopher Jeffrey (MIT License)
+Copyright (c) 2012-2014, Christopher Jeffrey (MIT License)
 
 [1]: http://invisible-island.net/xterm/ctlseqs/ctlseqs.html#Mouse%20Tracking

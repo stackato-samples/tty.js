@@ -1,6 +1,6 @@
 /**
  * tty.js
- * Copyright (c) 2012, Christopher Jeffrey (MIT License)
+ * Copyright (c) 2012-2013, Christopher Jeffrey (MIT License)
  */
 
 ;(function() {
@@ -13,66 +13,126 @@ var document = this.document
   , window = this
   , root
   , body
-  , h1;
+  , h1
+  , open
+  , lights;
+
+/**
+ * Initial Document Title
+ */
 
 var initialTitle = document.title;
+
+/**
+ * Helpers
+ */
+
+var EventEmitter = Terminal.EventEmitter
+  , inherits = Terminal.inherits
+  , on = Terminal.on
+  , off = Terminal.off
+  , cancel = Terminal.cancel;
+
+/**
+ * tty
+ */
+
+var tty = new EventEmitter;
 
 /**
  * Shared
  */
 
-var windows
-  , terms;
+tty.socket;
+tty.windows;
+tty.terms;
+tty.elements;
 
 /**
  * Open
  */
-      
-function open() {
-  var socket = io.connect()
-    , tty = window.tty;
 
-  root = document.documentElement;
-  body = document.body;
-  h1 = document.getElementsByTagName('h1')[0];
+tty.open = function() {
+  if (document.location.pathname) {
+    var parts = document.location.pathname.split('/')
+      , base = parts.slice(0, parts.length - 1).join('/') + '/'
+      , resource = base.substring(1) + 'socket.io';
 
-  windows = [];
-  terms = {};
+    tty.socket = io.connect(null, { resource: resource });
+  } else {
+    tty.socket = io.connect();
+  }
 
-  tty.socket = socket;
-  tty.windows = windows;
-  tty.terms = terms;
+  tty.windows = [];
+  tty.terms = {};
 
-  var open = document.getElementById('open')
-    , lights = document.getElementById('lights');
+  tty.elements = {
+    root: document.documentElement,
+    body: document.body,
+    h1: document.getElementsByTagName('h1')[0],
+    open: document.getElementById('open'),
+    lights: document.getElementById('lights')
+  };
+
+  root = tty.elements.root;
+  body = tty.elements.body;
+  h1 = tty.elements.h1;
+  open = tty.elements.open;
+  lights = tty.elements.lights;
 
   if (open) {
     on(open, 'click', function() {
-      new Window(socket);
+      new Window;
     });
   }
 
   if (lights) {
     on(lights, 'click', function() {
-      root.className = !root.className
-        ? 'dark'
-        : '';
+      tty.toggleLights();
     });
   }
 
-  socket.on('connect', function() {
-    reset();
-    new Window(socket);
+  tty.socket.on('connect', function() {
+    tty.reset();
+    tty.emit('connect');
   });
 
-  socket.on('data', function(id, data) {
-    if (!terms[id]) return;
-    terms[id].write(data);
+  tty.socket.on('data', function(id, data) {
+    if (!tty.terms[id]) return;
+    tty.terms[id].write(data);
   });
 
-  socket.on('kill', function(id) {
-    if (!terms[id]) return;
-    terms[id]._destroy();
+  tty.socket.on('kill', function(id) {
+    if (!tty.terms[id]) return;
+    tty.terms[id]._destroy();
+  });
+
+  // XXX Clean this up.
+  tty.socket.on('sync', function(terms) {
+    console.log('Attempting to sync...');
+    console.log(terms);
+
+    tty.reset();
+
+    var emit = tty.socket.emit;
+    tty.socket.emit = function() {};
+
+    Object.keys(terms).forEach(function(key) {
+      var data = terms[key]
+        , win = new Window
+        , tab = win.tabs[0];
+
+      delete tty.terms[tab.id];
+      tab.pty = data.pty;
+      tab.id = data.id;
+      tty.terms[data.id] = tab;
+      win.resize(data.cols, data.rows);
+      tab.setProcessName(data.process);
+      tty.emit('open tab', tab);
+      tab.emit('open');
+    });
+
+    tty.socket.emit = emit;
   });
 
   // We would need to poll the os on the serverside
@@ -81,40 +141,56 @@ function open() {
   // clientside, rather than poll on the
   // server, and *then* send it to the client.
   setInterval(function() {
-    var i = windows.length;
+    var i = tty.windows.length;
     while (i--) {
-      if (!windows[i].focused) continue;
-      windows[i].focused.pollProcessName();
+      if (!tty.windows[i].focused) continue;
+      tty.windows[i].focused.pollProcessName();
     }
   }, 2 * 1000);
 
   // Keep windows maximized.
-  on(window, 'resize', function(ev) {
-    var i = windows.length
+  on(window, 'resize', function() {
+    var i = tty.windows.length
       , win;
 
     while (i--) {
-      win = windows[i];
+      win = tty.windows[i];
       if (win.minimize) {
         win.minimize();
         win.maximize();
       }
     }
   });
-}
 
-function reset() {
-  var i = windows.length;
+  tty.emit('load');
+  tty.emit('open');
+};
+
+/**
+ * Reset
+ */
+
+tty.reset = function() {
+  var i = tty.windows.length;
   while (i--) {
-    windows[i].destroy();
+    tty.windows[i].destroy();
   }
 
-  windows = [];
-  terms = {};
+  tty.windows = [];
+  tty.terms = {};
 
-  window.tty.windows = windows;
-  window.tty.terms = terms;
-}
+  tty.emit('reset');
+};
+
+/**
+ * Lights
+ */
+
+tty.toggleLights = function() {
+  root.className = !root.className
+    ? 'dark'
+    : '';
+};
 
 /**
  * Window
@@ -122,6 +198,8 @@ function reset() {
 
 function Window(socket) {
   var self = this;
+
+  EventEmitter.call(this);
 
   var el
     , grip
@@ -147,7 +225,7 @@ function Window(socket) {
   title.className = 'title';
   title.innerHTML = '';
 
-  this.socket = socket;
+  this.socket = socket || tty.socket;
   this.element = el;
   this.grip = grip;
   this.bar = bar;
@@ -166,12 +244,19 @@ function Window(socket) {
   bar.appendChild(title);
   body.appendChild(el);
 
-  windows.push(this);
+  tty.windows.push(this);
 
   this.createTab();
   this.focus();
   this.bind();
+
+  this.tabs[0].once('open', function() {
+    tty.emit('open window', self);
+    self.emit('open');
+  });
 }
+
+inherits(Window, EventEmitter);
 
 Window.prototype.bind = function() {
   var self = this
@@ -215,12 +300,18 @@ Window.prototype.bind = function() {
 };
 
 Window.prototype.focus = function() {
+  // Restack
   var parent = this.element.parentNode;
   if (parent) {
     parent.removeChild(this.element);
     parent.appendChild(this.element);
   }
+
+  // Focus Foreground Tab
   this.focused.focus();
+
+  tty.emit('focus window', this);
+  this.emit('focus');
 };
 
 Window.prototype.destroy = function() {
@@ -229,18 +320,22 @@ Window.prototype.destroy = function() {
 
   if (this.minimize) this.minimize();
 
-  splice(windows, this);
-  if (windows.length) windows[0].focus();
+  splice(tty.windows, this);
+  if (tty.windows.length) tty.windows[0].focus();
 
   this.element.parentNode.removeChild(this.element);
 
   this.each(function(term) {
     term.destroy();
   });
+
+  tty.emit('close window', this);
+  this.emit('close');
 };
 
 Window.prototype.drag = function(ev) {
-  var el = this.element;
+  var self = this
+    , el = this.element;
 
   if (this.minimize) return;
 
@@ -262,13 +357,21 @@ Window.prototype.drag = function(ev) {
       (drag.top + ev.pageY - drag.pageY) + 'px';
   }
 
-  function up(ev) {
+  function up() {
     el.style.opacity = '';
     el.style.cursor = '';
     root.style.cursor = '';
 
     off(document, 'mousemove', move);
     off(document, 'mouseup', up);
+
+    var ev = {
+      left: el.style.left.replace(/\w+/g, ''),
+      top: el.style.top.replace(/\w+/g, '')
+    };
+
+    tty.emit('drag window', self, ev);
+    self.emit('drag', ev);
   }
 
   on(document, 'mousemove', move);
@@ -302,7 +405,7 @@ Window.prototype.resizing = function(ev) {
     el.style.height = y + 'px';
   }
 
-  function up(ev) {
+  function up() {
     var x, y;
 
     x = el.clientWidth / resize.w;
@@ -360,6 +463,9 @@ Window.prototype.maximize = function() {
     root.className = m.root;
 
     self.resize(m.cols, m.rows);
+
+    tty.emit('minimize window', self);
+    self.emit('minimize');
   };
 
   window.scrollTo(0, 0);
@@ -380,14 +486,21 @@ Window.prototype.maximize = function() {
   root.className = 'maximized';
 
   this.resize(x, y);
+
+  tty.emit('maximize window', this);
+  this.emit('maximize');
 };
 
 Window.prototype.resize = function(cols, rows) {
   this.cols = cols;
   this.rows = rows;
+
   this.each(function(term) {
     term.resize(cols, rows);
   });
+
+  tty.emit('resize window', this, cols, rows);
+  this.emit('resize', cols, rows);
 };
 
 Window.prototype.each = function(func) {
@@ -398,15 +511,17 @@ Window.prototype.each = function(func) {
 };
 
 Window.prototype.createTab = function() {
-  new Tab(this, this.socket);
+  return new Tab(this, this.socket);
 };
 
 Window.prototype.highlight = function() {
   var self = this;
+
   this.element.style.borderColor = 'orange';
   setTimeout(function() {
     self.element.style.borderColor = '';
   }, 200);
+
   this.focus();
 };
 
@@ -444,8 +559,10 @@ function Tab(win, socket) {
   var cols = win.cols
     , rows = win.rows;
 
-  // TODO: make this an EventEmitter
-  Terminal.call(this, cols, rows);
+  Terminal.call(this, {
+    cols: cols,
+    rows: rows
+  });
 
   var button = document.createElement('div');
   button.className = 'tab';
@@ -462,12 +579,13 @@ function Tab(win, socket) {
   });
 
   this.id = '';
-  this.socket = socket;
+  this.socket = socket || tty.socket;
   this.window = win;
   this.button = button;
   this.element = null;
   this.process = '';
   this.open();
+  this.hookKeys();
 
   win.tabs.push(this);
 
@@ -475,17 +593,23 @@ function Tab(win, socket) {
     if (err) return self._destroy();
     self.pty = data.pty;
     self.id = data.id;
-    terms[self.id] = self;
+    tty.terms[self.id] = self;
     self.setProcessName(data.process);
+    tty.emit('open tab', self);
+    self.emit('open');
   });
 };
 
 inherits(Tab, Terminal);
 
+// We could just hook in `tab.on('data', ...)`
+// in the constructor, but this is faster.
 Tab.prototype.handler = function(data) {
   this.socket.emit('data', this.id, data);
 };
 
+// We could just hook in `tab.on('title', ...)`
+// in the constructor, but this is faster.
 Tab.prototype.handleTitle = function(title) {
   if (!title) return;
 
@@ -540,6 +664,9 @@ Tab.prototype.focus = function() {
   this._focus();
 
   win.focus();
+
+  tty.emit('focus tab', this);
+  this.emit('focus');
 };
 
 Tab.prototype._resize = Tab.prototype.resize;
@@ -547,7 +674,11 @@ Tab.prototype._resize = Tab.prototype.resize;
 Tab.prototype.resize = function(cols, rows) {
   this.socket.emit('resize', this.id, cols, rows);
   this._resize(cols, rows);
+  tty.emit('resize tab', this, cols, rows);
+  this.emit('resize', cols, rows);
 };
+
+Tab.prototype.__destroy = Tab.prototype.destroy;
 
 Tab.prototype._destroy = function() {
   if (this.destroyed) return;
@@ -560,7 +691,7 @@ Tab.prototype._destroy = function() {
     this.element.parentNode.removeChild(this.element);
   }
 
-  if (terms[this.id]) delete terms[this.id];
+  if (tty.terms[this.id]) delete tty.terms[this.id];
   splice(win.tabs, this);
 
   if (win.focused === this) {
@@ -571,105 +702,113 @@ Tab.prototype._destroy = function() {
     win.destroy();
   }
 
-  // if (!windows.length) {
+  // if (!tty.windows.length) {
   //   document.title = initialTitle;
   //   if (h1) h1.innerHTML = initialTitle;
   // }
+
+  this.__destroy();
 };
 
 Tab.prototype.destroy = function() {
   if (this.destroyed) return;
   this.socket.emit('kill', this.id);
   this._destroy();
+  tty.emit('close tab', this);
+  this.emit('close');
 };
 
-Tab.prototype._keyDown = Tab.prototype.keyDown;
+Tab.prototype.hookKeys = function() {
+  var self = this;
 
-Tab.prototype.keyDown = function(ev) {
-  if (this.pendingKey) {
-    this.pendingKey = false;
-    return this.specialKeyHandler(ev);
-  }
-
-  // ^A for screen-key-like prefix.
-  if (Terminal.screenKeys && ev.ctrlKey && ev.keyCode === 65) {
-    this.pendingKey = true;
-    return cancel(ev);
-  }
-
-  // Alt-` to quickly swap between windows.
-  if (ev.keyCode === 192
-      && ((!isMac && ev.altKey)
-      || (isMac && ev.metaKey))) {
-    cancel(ev);
-
-    var i = indexOf(windows, this.window) + 1;
-    if (windows[i]) return windows[i].highlight();
-    if (windows[0]) return windows[0].highlight();
-
-    return this.window.highlight();
-  }
-
-  // URXVT Keys for tab navigation and creation.
-  // Shift-Left, Shift-Right, Shift-Down
-  if (ev.shiftKey && (ev.keyCode >= 37 && ev.keyCode <= 40)) {
-    cancel(ev);
-
-    if (ev.keyCode === 37) {
-      return this.window.previousTab();
-    } else if (ev.keyCode === 39) {
-      return this.window.nextTab();
+  // Alt-[jk] to quickly swap between windows.
+  this.on('key', function(key, ev) {
+    if (Terminal.focusKeys === false) {
+      return;
     }
 
-    return this.window.createTab();
-  }
+    var offset
+      , i;
 
-  // Pass to terminal key handler.
-  return this._keyDown(ev);
+    if (key === '\x1bj') {
+      offset = -1;
+    } else if (key === '\x1bk') {
+      offset = +1;
+    } else {
+      return;
+    }
+
+    i = indexOf(tty.windows, this.window) + offset;
+
+    this._ignoreNext();
+
+    if (tty.windows[i]) return tty.windows[i].highlight();
+
+    if (offset > 0) {
+      if (tty.windows[0]) return tty.windows[0].highlight();
+    } else {
+      i = tty.windows.length - 1;
+      if (tty.windows[i]) return tty.windows[i].highlight();
+    }
+
+    return this.window.highlight();
+  });
+
+  this.on('request paste', function(key) {
+    this.socket.emit('request paste', function(err, text) {
+      if (err) return;
+      self.send(text);
+    });
+  });
+
+  this.on('request create', function() {
+    this.window.createTab();
+  });
+
+  this.on('request term', function(key) {
+    if (this.window.tabs[key]) {
+      this.window.tabs[key].focus();
+    }
+  });
+
+  this.on('request term next', function(key) {
+    this.window.nextTab();
+  });
+
+  this.on('request term previous', function(key) {
+    this.window.previousTab();
+  });
 };
 
-// tmux/screen-like keys
-Tab.prototype.specialKeyHandler = function(ev) {
-  var win = this.window
-    , key = ev.keyCode;
-
-  switch (key) {
-    case 65: // a
-      if (ev.ctrlKey) {
-        return this._keyDown(ev);
-      }
-      break;
-    case 67: // c
-      win.createTab();
-      break;
-    case 75: // k
-      win.focused.destroy();
-      break;
-    case 87: // w (tmux key)
-    case 222: // " - mac (screen key)
-    case 192: // " - windows (screen key)
-      break;
-    default: // 0 - 9
-      if (key >= 48 && key <= 57) {
-        key -= 48;
-        // 1-indexed
-        key--;
-        if (!~key) key = 9;
-        if (win.tabs[key]) {
-          win.tabs[key].focus();
-        }
-      }
-      break;
-  }
-
-  return cancel(ev);
+Tab.prototype._ignoreNext = function() {
+  // Don't send the next key.
+  var handler = this.handler;
+  this.handler = function() {
+    this.handler = handler;
+  };
+  var showCursor = this.showCursor;
+  this.showCursor = function() {
+    this.showCursor = showCursor;
+  };
 };
 
 /**
  * Program-specific Features
  */
 
+Tab.scrollable = {
+  irssi: true,
+  man: true,
+  less: true,
+  htop: true,
+  top: true,
+  w3m: true,
+  lynx: true,
+  mocp: true
+};
+
 Tab.prototype._bindMouse = Tab.prototype.bindMouse;
+
 Tab.prototype.bindMouse = function() {
   if (!Terminal.programFeatures) return this._bindMouse();
 
@@ -679,19 +818,9 @@ Tab.prototype.bindMouse = function() {
     ? 'mousewheel'
     : 'DOMMouseScroll';
 
-  var programs = {
-    irssi: true,
-    man: true,
-    less: true,
-    htop: true,
-    top: true,
-    w3m: true,
-    lynx: true
-  };
-
   on(self.element, wheelEvent, function(ev) {
     if (self.mouseEvents) return;
-    if (!programs[self.process]) return;
+    if (!Tab.scrollable[self.process]) return;
 
     if ((ev.type === 'mousewheel' && ev.wheelDeltaY > 0)
         || (ev.type === 'DOMMouseScroll' && ev.detail < 0)) {
@@ -711,15 +840,22 @@ Tab.prototype.bindMouse = function() {
 Tab.prototype.pollProcessName = function(func) {
   var self = this;
   this.socket.emit('process', this.id, function(err, name) {
-    if (!err) self.setProcessName(name);
-    if (func) func(err, name);
+    if (err) return func && func(err);
+    self.setProcessName(name);
+    return func && func(null, name);
   });
 };
 
 Tab.prototype.setProcessName = function(name) {
   name = sanitize(name);
+
+  if (this.process !== name) {
+    this.emit('process', name);
+  }
+
   this.process = name;
   this.button.title = name;
+
   if (this.window.focused === this) {
     // if (this.title) {
     //   name += ' (' + this.title + ')';
@@ -731,14 +867,6 @@ Tab.prototype.setProcessName = function(name) {
 /**
  * Helpers
  */
-
-function inherits(child, parent) {
-  function f() {
-    this.constructor = child;
-  }
-  f.prototype = parent.prototype;
-  child.prototype = new f;
-}
 
 function indexOf(obj, el) {
   var i = obj.length;
@@ -752,24 +880,6 @@ function splice(obj, el) {
   var i = indexOf(obj, el);
   if (~i) obj.splice(i, 1);
 }
-
-function on(el, type, handler, capture) {
-  el.addEventListener(type, handler, capture || false);
-}
-
-function off(el, type, handler, capture) {
-  el.removeEventListener(type, handler, capture || false);
-}
-
-function cancel(ev) {
-  if (ev.preventDefault) ev.preventDefault();
-  ev.returnValue = false;
-  if (ev.stopPropagation) ev.stopPropagation();
-  ev.cancelBubble = true;
-  return false;
-}
-
-var isMac = ~navigator.userAgent.indexOf('Mac');
 
 function sanitize(text) {
   if (!text) return '';
@@ -786,7 +896,7 @@ function load() {
 
   off(document, 'load', load);
   off(document, 'DOMContentLoaded', load);
-  open();
+  tty.open();
 }
 
 on(document, 'load', load);
@@ -797,11 +907,11 @@ setTimeout(load, 200);
  * Expose
  */
 
-this.tty = {
-  Window: Window,
-  Tab: Tab,
-  Terminal: Terminal
-};
+tty.Window = Window;
+tty.Tab = Tab;
+tty.Terminal = Terminal;
+
+this.tty = tty;
 
 }).call(function() {
   return this || (typeof window !== 'undefined' ? window : global);
