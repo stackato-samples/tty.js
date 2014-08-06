@@ -1,5 +1,0 @@
-name: tty-js
-
-mem: 64M
-
-ignores: ['node_modules', '.git']

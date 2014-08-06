@@ -1,0 +1,7 @@
+applications:
+- name: tty-js
+  mem: 64M
+  stackato:
+    ignores:
+    - node_modules
+    - .git
