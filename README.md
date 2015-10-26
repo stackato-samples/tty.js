@@ -32,7 +32,7 @@ For the lowlevel terminal spawner, see
 - 256 color support
 - Persistent sessions
 
-## Deploying to Stackato
+## Deploying to HPE Helion Stackato
 
 You should first configure your authenticated user in `lib/config.js`. Currently the defaults are:
 
