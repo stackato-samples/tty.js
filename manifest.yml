@@ -1,6 +1,6 @@
 applications:
 - name: tty-js
-  mem: 64M
+  memory: 64M
   stackato:
     ignores:
     - node_modules
