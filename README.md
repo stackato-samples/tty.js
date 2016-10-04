@@ -42,7 +42,7 @@ Password: `stackato`
 When done, simply run
 
 ```
- stackato push -n
+ cf push
 ```
 
 ## Install
